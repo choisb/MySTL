@@ -21,10 +21,10 @@ template<typename T1, typename T2> struct compressed_pair<T1, T2, false>
 	compressed_pair(zero_and_variadic_arg_t, A2&& ...arg2)
 		:first(), second(std::forward<A2>(arg2)...) {}
 
-	T1& getFirst() noexcept { return const_cast<T1&>(getFirst()); }
-	T2& getSecond() noexcept { return const_cast<T2&>(getSecond()); }
+	T1& get_first() noexcept { return const_cast<T1&>(get_first()); }
+	T2& get_second() noexcept { return const_cast<T2&>(get_second()); }
 	const T1& getFirst() const noexcept { return first; }
-	const T2& getSecond() const noexcept { return second; }
+	const T2& get_second() const noexcept { return second; }
 };
 
 // T1 isn't empty class
@@ -41,9 +41,9 @@ struct compressed_pair <T1, T2, true> : public T1
 	compressed_pair(zero_and_variadic_arg_t, A2&& ...arg2)
 		:T1(), second(std::forward<A2>(arg2)...) {}
 
-	T1& getFirst() noexcept { return const_cast<T1&>(getFirst()); }
-	T2& getSecond() noexcept { return const_cast<T2&>(getSecond()); }
-	const T1& getFirst() const noexcept { return *this; }
-	const T2& getSecond() const noexcept { return second; }
+	T1& get_first() noexcept { return const_cast<T1&>(get_first()); }
+	T2& get_second() noexcept { return const_cast<T2&>(get_second()); }
+	const T1& get_first() const noexcept { return *this; }
+	const T2& get_second() const noexcept { return second; }
 
 };
