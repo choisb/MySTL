@@ -1,19 +1,26 @@
 #pragma once
+
 #include <cstddef>
 #include <memory>
 #include <initializer_list>
-#include <vector> //todo:: ±¸Çö ¿Ï·áÈÄ »èÁ¦
+//#include <vector> //todo:: êµ¬í˜„ ì™„ë£Œí›„ ì‚­ì œ
 #include "coreType.h"
 #include "iterator.h"
+#include "compressed_pair.h"
 
-constexpr int INIT_CAP = 10;
-constexpr float RESIZE_FACTOR = 1.5f;
 
+//std::vector<int> a;
 namespace my {
+
+
 
 	template<class T, class Allocator = std::allocator<T>>
 	class vector
 	{
+		static constexpr std::size_t INIT_CAP = 10;
+		static constexpr float RESIZE_FACTOR = 1.5;
+
+
 		struct vector_iterator;
 
 		using value_type = T;
@@ -22,7 +29,7 @@ namespace my {
 		using difference_type = std::ptrdiff_t;
 		using reference = value_type & ;
 		using const_reference = const reference;
-		using pointer = value_type* ;				// Allocator::pointer ¿¡·¯.. ÀÌÀ¯´Â? ÀÏ´Ü value_type* ·Îµµ ÀÇ¹Ì»ó µ¿ÀÏÇÏ±â ¶§¹®¿¡ ÀÌ·¸°Ô ±¸ÇöÇÏÀÚ.
+		using pointer = typename Allocator::pointer;				
 		using const_pointer = const pointer;
 		using iterator = vector_iterator;
 		using const_iterator = const iterator;
@@ -31,7 +38,20 @@ namespace my {
 
 
 
-		class vector_iterator : public base_iterator<random_access_iterator_tag, value_type>
+		struct vector_compressed_pair : public compressed_pair<allocator_type, value_type*>
+		{
+			using super = compressed_pair<allocator_type, value_type*>;
+			vector_compressed_pair(const allocator_type& alloc)
+				:super(one_and_variadic_arg_t(), alloc)
+			{}
+			const allocator_type& get_allocator() const noexcept { return super::get_first(); }
+			allocator_type& get_allocator() noexcept { return super::get_first(); }
+
+			const value_type*& get_data() const noexcept { return super::get_second(); }
+			value_type*& get_data() { return super::get_second(); }
+		};
+
+		struct vector_iterator : public base_iterator<random_access_iterator_tag, value_type>
 		{
 			using super = base_iterator<random_access_iterator_tag, value_type>;
 
@@ -49,26 +69,26 @@ namespace my {
 	public:
 		// Constructor
 		vector() // 1
-			:_allocator(allocator_type())
+			:_alloc_data_pair(allocator_type())
 		{
 			_init_allocate();
 		}
 		explicit vector(const Allocator& alloc) // 2
-			:_allocator(alloc)
+			:_alloc_data_pair(alloc)
 		{
 			_init_allocate();
 		}
 		vector(size_type count, const value_type& value, const Allocator& alloc = Allocator())	// 3
-			:_allocator(alloc)
+			:_alloc_data_pair(alloc)
 		{
-
-			_init_construct(count, value);
+			_init_copy_construct(count, value);
 		}
 		explicit vector(size_type count, const Allocator& alloc = Allocator())// 4
+			:_alloc_data_pair(alloc)
 		{
-			_init_construct(count, value_type()); 
+			_init_default_construct(count);
 		}
-		//template< class InputIt > // Á¤¼öÇü ¸Å°³º¯¼ö¸¦ Àü´ŞÇÒ °æ¿ì¿¡µµ ÀÚµ¿À¸·Î ¿©±â·Î µé¾î¿È. ¾î¶»°Ô 
+		//template< class InputIt > // ì •ìˆ˜í˜• ë§¤ê°œë³€ìˆ˜ë¥¼ ì „ë‹¬í•  ê²½ìš°ì—ë„ ìë™ìœ¼ë¡œ ì—¬ê¸°ë¡œ ë“¤ì–´ì˜´. 
 		//vector(InputIt first, InputIt last, const Allocator& alloc = Allocator())	// 5
 		//{
 
@@ -80,7 +100,14 @@ namespace my {
 		vector( std::initializer_list<T> init, const Allocator& alloc = Allocator() );							// 10
 
 		// Destructor
-		virtual ~vector() {};
+		virtual ~vector() 
+		{
+			for (size_type idx = 0; idx < _size; ++idx)
+			{
+				_alloc_data_pair.get_allocator().destroy(_alloc_data_pair.get_data() + idx);
+			}
+			_relase_all();
+		}
 
 		// operator=
 		vector& operator=(const vector& other);		// 1
@@ -159,34 +186,114 @@ namespace my {
 
 
 	private:
-		value_type* _data{};
-		allocator_type _allocator{};
+		vector_compressed_pair _alloc_data_pair;
 		size_type _size{};
 		size_type _capacity{};
 
 		void _init_allocate(size_type capacity = INIT_CAP)
 		{
 			_capacity = capacity;
-			_data = _allocator.allocate(_capacity);
+			_alloc_data_pair.get_data() = _alloc_data_pair.get_allocator().allocate(_capacity);
 		}
-		void _init_construct(size_type count, const value_type& value)
+		void _create_with_default_constructor(size_type count)
 		{
-			size_type newCapacity = INIT_CAP;
-			if (count * RESIZE_FACTOR > INIT_CAP)
+			size_type idx = _size;
+			try
 			{
-				newCapacity = count * RESIZE_FACTOR;
+				_size += count;
+				for (; idx < _size; ++idx)
+				{
+					// call copy constructor
+					_alloc_data_pair.get_allocator().construct((_alloc_data_pair.get_data() + idx));
+				}
 			}
-			_init_allocate(newCapacity);
-
-			value_type temp(value);
-			size_type size = sizeof(value_type);
-			for (size_type i = 0; i < count; ++i)
+			// TODO: ìƒì„± ì˜ˆì™¸ ë°œìƒì‹œ ì •ì±…ì€?
+			// 1: ëª¨ë‘ ì†Œë©¸, ë©”ëª¨ë¦¬ í•´ì œ?
+			// 2: ìƒì„±í•œ ê°ì²´ë§Œ ì†Œë©¸? - ê·¸ëŸ¼ ë©”ëª¨ë¦¬ëŠ”??
+			catch (...)
 			{
-				memcpy(data + (i * size), &temp, size);
+				idx--; // në²ˆì§¸ ìƒì„±ì¤‘ ì˜ˆì™¸ ë°œìƒí–ˆê¸° ë•Œë¬¸ì— n-1 ë²ˆì§¸ ë¶€í„° ì†Œë©¸
+				_size -= count;
+				for (; idx >= _size; --idx)
+				{
+					_alloc_data_pair.get_allocator().destroy(_alloc_data_pair.get_data() + idx);
+				}
+				throw;
+			}
+		}
+		void _create_with_copy_constructor(size_type count, const value_type& value)
+		{
+			size_type idx = _size;
+			try
+			{
+				_size += count;
+				for (; idx < _size; ++idx)
+				{
+					// call copy constructor
+					_alloc_data_pair.get_allocator().construct((_alloc_data_pair.get_data() + idx), value);
+				}
+			}
+			// TODO: ìƒì„± ì˜ˆì™¸ ë°œìƒì‹œ ì •ì±…ì€?
+			// 1: ëª¨ë‘ ì†Œë©¸, ë©”ëª¨ë¦¬ í•´ì œ?
+			// 2: ìƒì„±í•œ ê°ì²´ë§Œ ì†Œë©¸? - ê·¸ëŸ¼ ë©”ëª¨ë¦¬ëŠ”??
+			catch (...)
+			{
+				idx--; // në²ˆì§¸ ìƒì„±ì¤‘ ì˜ˆì™¸ ë°œìƒí–ˆê¸° ë•Œë¬¸ì— n-1 ë²ˆì§¸ ë¶€í„° ì†Œë©¸
+				_size -= count;
+				for (; idx >= _size; --idx)
+				{
+					_alloc_data_pair.get_allocator().destroy(_alloc_data_pair.get_data() + idx);
+				}
+				throw;
 			}
 		}
 
-		// ÃßÈÄ ±¸ÇöÇØ¾ßÇÒ ±â´Éµé
+		void _init_copy_construct(size_type count, const value_type& value)
+		{
+			_init_allocate(_cal_new_capacity(count));
+			try
+			{
+				_create_with_copy_constructor(count, value);
+			}
+			catch (...)
+			{
+				_relase_all()
+				throw;
+			}
+		}
+
+		void _init_default_construct(size_type count)
+		{
+			_init_allocate(_cal_new_capacity(count));
+			try
+			{
+				_create_with_default_constructor(count);
+			}
+			catch (...)
+			{
+				_relase_all();
+				throw;
+			}
+		}
+		void _relase_all()
+		{
+			_alloc_data_pair.get_allocator().deallocate(_alloc_data_pair.get_data(), _capacity);
+			_capacity = 0;
+		}
+
+		size_type _cal_new_capacity(size_type count)
+		{
+			size_type new_capacity = INIT_CAP;
+
+			size_type resize_capacity = static_cast<size_type>(count * RESIZE_FACTOR);
+
+			if (resize_capacity > new_capacity)
+			{
+				new_capacity = resize_capacity;
+			}
+			return new_capacity;
+		}
+		// ì¶”í›„ êµ¬í˜„í•´ì•¼í•  ê¸°ëŠ¥ë“¤
 		
 		// assing()
 		// template< class InputIt >	void assign(InputIt first, InputIt last);	// 2
