@@ -46,13 +46,9 @@ project "MySTL"
 	}
 
 	filter "configurations:Debug"
-		defines "HZ_DEBUG"
+		defines "DEBUG"
 		symbols "On"
 
 	filter "configurations:Release"
-		defines "HZ_RELEASE"
-		optimize "On"
-
-	filter "configurations:Dist"
-		defines "HZ_DIST"
+		defines "RELEASE"
 		optimize "On"
